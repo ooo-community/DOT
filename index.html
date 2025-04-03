@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -10,9 +9,12 @@
       padding: 2em;
       background: #f7f7f7;
     }
-    label, input, button {
-      font-size: 1.2em;
-      margin: 0.5em 0;
+    label, input, button, select {
+      font-size: 1.1em;
+      margin: 0.3em 0.5em 0.3em 0;
+    }
+    .section {
+      margin-bottom: 1.5em;
     }
     .schedule {
       margin-top: 2em;
@@ -24,14 +26,52 @@
     .due {
       background: #ffe0e0;
     }
+    #log {
+      margin-top: 2em;
+      padding: 1em;
+      background: #fff;
+      border: 1px solid #ccc;
+      max-height: 300px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
   <h1>Hlídač dávkování</h1>
-  <p>Zadej čas "Dotu" (hlavního dávkování):</p>
-  <input type="datetime-local" id="dotTime">
-  <button onclick="startSchedule()">Spustit plán</button>
+
+  <div class="section">
+    <label>Čas první dávky DOT:</label>
+    <input type="time" id="initialDotTime">
+    <label>Množství:</label>
+    <input type="text" id="initialDose">
+    <button onclick="setInitialDot()">Nastavit první DOT</button>
+  </div>
+
+  <div class="section">
+    <h3>Další dávky DOT:</h3>
+    <div>
+      <label>Množství:</label>
+      <input type="text" id="dose1">
+      <button onclick="recordDot('dose1')">Zaznamenat další DOT</button>
+    </div>
+    <div>
+      <label>Množství:</label>
+      <input type="text" id="dose2">
+      <button onclick="recordDot('dose2')">Zaznamenat další DOT</button>
+    </div>
+    <div>
+      <label>Množství:</label>
+      <input type="text" id="dose3">
+      <button onclick="recordDot('dose3')">Zaznamenat další DOT</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <button onclick="stopAlarm()">🛑 Vypnout alarm</button>
+  </div>
+
   <div class="schedule" id="schedule"></div>
+  <div id="log"><strong>LOG:</strong><br></div>
 
   <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" preload="auto"></audio>
 
@@ -52,24 +92,52 @@
     ];
 
     let intervals = [];
+    let alertSound = null;
 
-    function startSchedule() {
-      const dotTime = new Date(document.getElementById('dotTime').value);
-      if (isNaN(dotTime.getTime())) {
-        alert("Zadej platný čas!");
-        return;
-      }
+    function logAction(text) {
+      const now = new Date();
+      const log = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.textContent = `[${now.toLocaleString('cs-CZ')}] ${text}`;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setInitialDot() {
+      const timeInput = document.getElementById('initialDotTime').value;
+      const doseAmount = document.getElementById('initialDose').value;
+      const [hours, minutes] = timeInput.split(":").map(Number);
+      const now = new Date();
+      const dotTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
       localStorage.setItem('dotTime', dotTime.toISOString());
+      logAction(`Nastaven první DOT v ${formatTime(dotTime)} (${doseAmount})`);
+      startSchedule(dotTime);
+    }
+
+    function recordDot(doseId) {
+      const now = new Date();
+      const doseAmount = document.getElementById(doseId).value;
+      localStorage.setItem('dotTime', now.toISOString());
+      localStorage.setItem('lastDoseAmount', doseAmount);
+      logAction(`Zaznamenán další DOT v ${formatTime(now)} (${doseAmount})`);
+      startSchedule(now);
+    }
+
+    function confirmDose(note, time) {
+      logAction(`✅ Potvrzeno: ${note} ve ${formatTime(new Date(time))}`);
+    }
+
+    function startSchedule(dotTime) {
       clearIntervals();
       document.getElementById('schedule').innerHTML = '';
-      const alertSound = document.getElementById('alertSound');
+      alertSound = document.getElementById('alertSound');
 
       scheduleTimes.forEach(([offset, note]) => {
         const doseTime = new Date(dotTime.getTime() + offset * 60 * 60 * 1000);
         const div = document.createElement('div');
         div.className = 'dose';
         div.dataset.time = doseTime.getTime();
-        div.innerHTML = `<strong>${formatTime(doseTime)}:</strong> ${note}`;
+        div.innerHTML = `<strong>${formatTime(doseTime)}:</strong> ${note} <button onclick="confirmDose('${note}', ${doseTime.getTime()})">Potvrdit</button>`;
         document.getElementById('schedule').appendChild(div);
       });
 
@@ -82,9 +150,18 @@
             div.classList.add('due');
             alertSound.play();
             showNotification(div.textContent);
+            logAction(`🔔 Upozornění: ${div.textContent}`);
           }
         });
       }, 10000));
+    }
+
+    function stopAlarm() {
+      if (alertSound) {
+        alertSound.pause();
+        alertSound.currentTime = 0;
+        logAction("🛑 Alarm byl zastaven uživatelem.");
+      }
     }
 
     function formatTime(date) {
@@ -109,10 +186,11 @@
     }
 
     window.onload = () => {
+      alertSound = document.getElementById('alertSound');
       const saved = localStorage.getItem('dotTime');
       if (saved) {
-        document.getElementById('dotTime').value = saved.substring(0,16);
-        startSchedule();
+        const dotTime = new Date(saved);
+        startSchedule(dotTime);
       }
     }
   </script>
