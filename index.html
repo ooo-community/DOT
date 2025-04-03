@@ -1,0 +1,120 @@
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Hlídání dávkování – Go Hard or Go Home</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2em;
+      background: #f7f7f7;
+    }
+    label, input, button {
+      font-size: 1.2em;
+      margin: 0.5em 0;
+    }
+    .schedule {
+      margin-top: 2em;
+    }
+    .dose {
+      padding: 0.5em;
+      border-bottom: 1px solid #ccc;
+    }
+    .due {
+      background: #ffe0e0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hlídač dávkování</h1>
+  <p>Zadej čas "Dotu" (hlavního dávkování):</p>
+  <input type="datetime-local" id="dotTime">
+  <button onclick="startSchedule()">Spustit plán</button>
+  <div class="schedule" id="schedule"></div>
+
+  <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" preload="auto"></audio>
+
+  <script>
+    const scheduleTimes = [
+      [-4, '2 g zázvoru'],
+      [-3, '500 mg ALCAR, 500 mg vitamín C'],
+      [-2, ''],
+      [-1, '2 g zázvoru, (1 tableta hořčíku)'],
+      [0, '300 mg ALA, 500 mg vitamín C'],
+      [1, '300 mg ALA, 500 mg ALCAR'],
+      [2, '300 mg ALA, (1 tableta hořčíku)'],
+      [3, '300 mg ALA, 500 mg ALCAR'],
+      [4, '300 mg ALA'],
+      [5, '300 mg ALA, 500 mg ALCAR'],
+      [6, '300 mg ALA, 500 mg vitamín C'],
+      [7, '300 mg ALA']
+    ];
+
+    let intervals = [];
+
+    function startSchedule() {
+      const dotTime = new Date(document.getElementById('dotTime').value);
+      if (isNaN(dotTime.getTime())) {
+        alert("Zadej platný čas!");
+        return;
+      }
+      localStorage.setItem('dotTime', dotTime.toISOString());
+      clearIntervals();
+      document.getElementById('schedule').innerHTML = '';
+      const alertSound = document.getElementById('alertSound');
+
+      scheduleTimes.forEach(([offset, note]) => {
+        const doseTime = new Date(dotTime.getTime() + offset * 60 * 60 * 1000);
+        const div = document.createElement('div');
+        div.className = 'dose';
+        div.dataset.time = doseTime.getTime();
+        div.innerHTML = `<strong>${formatTime(doseTime)}:</strong> ${note}`;
+        document.getElementById('schedule').appendChild(div);
+      });
+
+      requestNotificationPermission();
+      intervals.push(setInterval(() => {
+        const now = Date.now();
+        document.querySelectorAll('.dose').forEach(div => {
+          const time = parseInt(div.dataset.time);
+          if (Math.abs(now - time) < 60000 && !div.classList.contains('due')) {
+            div.classList.add('due');
+            alertSound.play();
+            showNotification(div.textContent);
+          }
+        });
+      }, 10000));
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function showNotification(text) {
+      if (Notification.permission === "granted") {
+        new Notification("Čas dávkování!", { body: text });
+      }
+    }
+
+    function requestNotificationPermission() {
+      if (Notification.permission !== "granted") {
+        Notification.requestPermission();
+      }
+    }
+
+    function clearIntervals() {
+      intervals.forEach(clearInterval);
+      intervals = [];
+    }
+
+    window.onload = () => {
+      const saved = localStorage.getItem('dotTime');
+      if (saved) {
+        document.getElementById('dotTime').value = saved.substring(0,16);
+        startSchedule();
+      }
+    }
+  </script>
+</body>
+</html>
